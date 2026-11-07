@@ -1,6 +1,7 @@
 payflow:
   security:
     api-key-pepper: dev-only-pepper-change-me
+    admin-token: dev-admin-token
 server:
   port: 8081
 spring:
