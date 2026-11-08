@@ -1,10 +1,14 @@
 package com.payflow.payflow.common;
 
+import com.payflow.payflow.idempotency.IdempotencyKeyMissingException;
+import com.payflow.payflow.idempotency.IdempotencyKeyReusedException;
+import com.payflow.payflow.idempotency.RequestInProgressException;
 import com.payflow.payflow.payment.InvalidStateTransitionException;
 import com.payflow.payflow.payment.PaymentNotFoundException;
 import com.payflow.payflow.provider.ProviderUnavailableException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -20,6 +24,22 @@ public class ApiExceptionHandler {
                 .map(f -> f.getField() + " " + f.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", detail);
+    }
+
+    @ExceptionHandler(IdempotencyKeyMissingException.class)
+    public ProblemDetail keyMissing(IdempotencyKeyMissingException e) {
+        return problem(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_MISSING", e.getMessage());
+    }
+
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ProblemDetail keyReused(IdempotencyKeyReusedException e) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, "IDEMPOTENCY_KEY_REUSED", e.getMessage());
+    }
+
+    @ExceptionHandler(RequestInProgressException.class)
+    public ResponseEntity<ProblemDetail> inProgress(RequestInProgressException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).header("Retry-After", "1")
+                .body(problem(HttpStatus.CONFLICT, "REQUEST_IN_PROGRESS", e.getMessage()));
     }
 
     @ExceptionHandler(PaymentNotFoundException.class)
