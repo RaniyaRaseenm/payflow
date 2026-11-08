@@ -17,8 +17,7 @@ public class MockPaymentProvider implements PaymentProvider {
     @Override
     public ProviderResult authorize(String idempotencyKey, long amountMinor,
                                     String currency, String token) {
-        return seen.computeIfAbsent("auth:" + idempotencyKey,
-                k -> decide(token));
+        return seen.computeIfAbsent("auth:" + idempotencyKey, k -> decide(token));
     }
 
     @Override
@@ -29,6 +28,16 @@ public class MockPaymentProvider implements PaymentProvider {
             }
             return ProviderResult.ok(providerRef);
         });
+    }
+
+    @Override
+    public ProviderResult voidAuthorization(String idempotencyKey, String providerRef) {
+        return seen.computeIfAbsent("void:" + idempotencyKey, k -> ProviderResult.ok(providerRef));
+    }
+
+    @Override
+    public ProviderResult refund(String idempotencyKey, String providerRef) {
+        return seen.computeIfAbsent("refund:" + idempotencyKey, k -> ProviderResult.ok(providerRef));
     }
 
     private ProviderResult decide(String token) {

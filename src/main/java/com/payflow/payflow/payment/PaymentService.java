@@ -2,6 +2,7 @@ package com.payflow.payflow.payment;
 
 import com.payflow.payflow.provider.PaymentProvider;
 import com.payflow.payflow.provider.ProviderResult;
+import com.payflow.payflow.provider.ProviderUnavailableException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -43,7 +44,45 @@ public class PaymentService {
         if (!capture) {
             return payment;
         }
+        return doCapture(payment);
+    }
 
+    public Payment capture(String merchantId, String paymentId) {
+        Payment payment = get(merchantId, paymentId);
+        requireMove(payment, PaymentStatus.CAPTURED);
+        return doCapture(payment);
+    }
+
+    public Payment voidPayment(String merchantId, String paymentId) {
+        Payment payment = get(merchantId, paymentId);
+        requireMove(payment, PaymentStatus.VOIDED);
+        ProviderResult res = provider.voidAuthorization("void_" + payment.getId(),
+                payment.getProviderRef());
+        if (!res.success()) {
+            throw new ProviderUnavailableException("Void failed: " + res.failureCode());
+        }
+        payment.transitionTo(PaymentStatus.VOIDED, LocalDateTime.now(clock));
+        return payments.save(payment);
+    }
+
+    public Payment refund(String merchantId, String paymentId) {
+        Payment payment = get(merchantId, paymentId);
+        requireMove(payment, PaymentStatus.REFUNDED);
+        ProviderResult res = provider.refund("refund_" + payment.getId(),
+                payment.getProviderRef());
+        if (!res.success()) {
+            throw new ProviderUnavailableException("Refund failed: " + res.failureCode());
+        }
+        payment.transitionTo(PaymentStatus.REFUNDED, LocalDateTime.now(clock));
+        return payments.save(payment);
+    }
+
+    public Payment get(String merchantId, String paymentId) {
+        return payments.findByIdAndMerchantId(paymentId, merchantId)
+                .orElseThrow(() -> new PaymentNotFoundException(paymentId));
+    }
+
+    private Payment doCapture(Payment payment) {
         ProviderResult cap = provider.capture("cap_" + payment.getId(), payment.getProviderRef());
         if (cap.success()) {
             payment.transitionTo(PaymentStatus.CAPTURED, LocalDateTime.now(clock));
@@ -54,8 +93,9 @@ public class PaymentService {
         return payments.save(payment);
     }
 
-    public Payment get(String merchantId, String paymentId) {
-        return payments.findByIdAndMerchantId(paymentId, merchantId)
-                .orElseThrow(() -> new PaymentNotFoundException(paymentId));
+    private void requireMove(Payment payment, PaymentStatus next) {
+        if (!payment.getStatus().canMoveTo(next)) {
+            throw new InvalidStateTransitionException(payment.getStatus(), next);
+        }
     }
 }
