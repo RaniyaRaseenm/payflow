@@ -32,6 +32,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.payflow.payflow.payment.PaymentEventRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,6 +88,7 @@ class ConcurrencyTest {
 
     @Autowired MerchantService merchantService;
     @Autowired PaymentRepository payments;
+    @Autowired PaymentEventRepository events;
 
     private final HttpClient http =
             HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -145,7 +147,8 @@ class ConcurrencyTest {
 
         Payment p = payments.findById(paymentId).orElseThrow();
         assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
-        assertThat(p.getVersion()).isEqualTo(3);   // created 0, authorized 1, captured 2, refunded 3
+        assertThat(p.getVersion()).isEqualTo(3);
+        assertThat(events.countByPaymentIdAndToStatus(paymentId, PaymentStatus.REFUNDED)).isEqualTo(1);// created 0, authorized 1, captured 2, refunded 3
     }
 
     // ---------- helpers ----------
