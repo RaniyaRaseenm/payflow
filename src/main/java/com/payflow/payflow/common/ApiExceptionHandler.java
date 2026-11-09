@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.payflow.payflow.payment.PaymentConflictException;
 
 import java.util.stream.Collectors;
 
@@ -55,6 +56,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ProviderUnavailableException.class)
     public ProblemDetail providerDown(ProviderUnavailableException e) {
         return problem(HttpStatus.BAD_GATEWAY, "PROVIDER_UNAVAILABLE", e.getMessage());
+    }
+
+    @ExceptionHandler(PaymentConflictException.class)
+    public ProblemDetail conflict(PaymentConflictException e) {
+        return problem(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION", e.getMessage());
     }
 
     private ProblemDetail problem(HttpStatus status, String code, String detail) {

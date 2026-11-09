@@ -12,6 +12,7 @@ spring:
     username: payflow
     password: payflow
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: validate
   flyway:

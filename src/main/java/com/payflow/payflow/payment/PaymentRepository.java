@@ -5,4 +5,5 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
     Optional<Payment> findByIdAndMerchantId(String id, String merchantId);
+    long countByMerchantId(String merchantId);
 }

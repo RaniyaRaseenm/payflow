@@ -3,13 +3,18 @@ package com.payflow.payflow.payment;
 import com.payflow.payflow.provider.PaymentProvider;
 import com.payflow.payflow.provider.ProviderResult;
 import com.payflow.payflow.provider.ProviderUnavailableException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 @Service
 public class PaymentService {
+
+    private static final int MAX_ATTEMPTS = 3;
 
     private final PaymentRepository payments;
     private final PaymentProvider provider;
@@ -48,33 +53,39 @@ public class PaymentService {
     }
 
     public Payment capture(String merchantId, String paymentId) {
-        Payment payment = get(merchantId, paymentId);
-        requireMove(payment, PaymentStatus.CAPTURED);
-        return doCapture(payment);
+        return withRetry(() -> {
+            Payment payment = get(merchantId, paymentId);
+            requireMove(payment, PaymentStatus.CAPTURED);
+            return doCapture(payment);
+        });
     }
 
     public Payment voidPayment(String merchantId, String paymentId) {
-        Payment payment = get(merchantId, paymentId);
-        requireMove(payment, PaymentStatus.VOIDED);
-        ProviderResult res = provider.voidAuthorization("void_" + payment.getId(),
-                payment.getProviderRef());
-        if (!res.success()) {
-            throw new ProviderUnavailableException("Void failed: " + res.failureCode());
-        }
-        payment.transitionTo(PaymentStatus.VOIDED, LocalDateTime.now(clock));
-        return payments.save(payment);
+        return withRetry(() -> {
+            Payment payment = get(merchantId, paymentId);
+            requireMove(payment, PaymentStatus.VOIDED);
+            ProviderResult res = provider.voidAuthorization("void_" + payment.getId(),
+                    payment.getProviderRef());
+            if (!res.success()) {
+                throw new ProviderUnavailableException("Void failed: " + res.failureCode());
+            }
+            payment.transitionTo(PaymentStatus.VOIDED, LocalDateTime.now(clock));
+            return payments.save(payment);
+        });
     }
 
     public Payment refund(String merchantId, String paymentId) {
-        Payment payment = get(merchantId, paymentId);
-        requireMove(payment, PaymentStatus.REFUNDED);
-        ProviderResult res = provider.refund("refund_" + payment.getId(),
-                payment.getProviderRef());
-        if (!res.success()) {
-            throw new ProviderUnavailableException("Refund failed: " + res.failureCode());
-        }
-        payment.transitionTo(PaymentStatus.REFUNDED, LocalDateTime.now(clock));
-        return payments.save(payment);
+        return withRetry(() -> {
+            Payment payment = get(merchantId, paymentId);
+            requireMove(payment, PaymentStatus.REFUNDED);
+            ProviderResult res = provider.refund("refund_" + payment.getId(),
+                    payment.getProviderRef());
+            if (!res.success()) {
+                throw new ProviderUnavailableException("Refund failed: " + res.failureCode());
+            }
+            payment.transitionTo(PaymentStatus.REFUNDED, LocalDateTime.now(clock));
+            return payments.save(payment);
+        });
     }
 
     public Payment get(String merchantId, String paymentId) {
@@ -96,6 +107,29 @@ public class PaymentService {
     private void requireMove(Payment payment, PaymentStatus next) {
         if (!payment.getStatus().canMoveTo(next)) {
             throw new InvalidStateTransitionException(payment.getStatus(), next);
+        }
+    }
+
+    /** If someone else changed the payment first, reload it, re-check the rules, and try again. */
+    private Payment withRetry(Supplier<Payment> operation) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return operation.get();
+            } catch (OptimisticLockingFailureException e) {
+                if (attempt >= MAX_ATTEMPTS) {
+                    throw new PaymentConflictException();
+                }
+                pause();
+            }
+        }
+    }
+
+    private void pause() {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(5, 25));
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new PaymentConflictException();
         }
     }
 }
